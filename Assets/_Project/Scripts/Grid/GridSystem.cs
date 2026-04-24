@@ -2,8 +2,7 @@ using UnityEngine;
 
 namespace Prism
 {
-    // Oyun alanindaki kareleri yoneten sistem.
-    // Mantiksal grid: kac sutun, kac satir, her karenin dunya pozisyonu nerede.
+    // grid pozisyonu ile world pozisyonu arasindaki mantigi kur
     public class GridSystem : MonoBehaviour
     {
         [Header("Grid Boyutu")]
@@ -18,12 +17,12 @@ namespace Prism
         [SerializeField] private bool showGizmos = true;
         [SerializeField] private Color gizmoColor = new Color(0.4f, 0.4f, 0.6f, 0.5f);
 
-        // Disaridan okunabilir ama degistirilemez.
+        // disariya gerekli bilgileri acalim sadece okuma
         public int Columns => columns;
         public int Rows => rows;
         public float CellSize => cellSize;
 
-        // Bir grid koordinatinin (x, y) dunya pozisyonunu dondurur.
+        //  grid koordinatinin (x, y) , world pozisyonunu dondur
         public Vector3 GridToWorld(int x, int y)
         {
             float offsetX = -(columns - 1) * cellSize / 2f;
@@ -35,7 +34,7 @@ namespace Prism
             return new Vector3(worldX, worldY, 0f);
         }
 
-        // Dunya pozisyonundan en yakin grid koordinatini hesaplar.
+        // world pozisyonundan en yakin grid koordinatini hesapla
         public Vector2Int WorldToGrid(Vector3 worldPos)
         {
             float offsetX = -(columns - 1) * cellSize / 2f;
@@ -47,21 +46,20 @@ namespace Prism
             return new Vector2Int(x, y);
         }
 
-        // Verilen grid koordinati gecerli mi?
+        // verilen grid koordinati gecerli mi bak
         public bool IsValidCoordinate(int x, int y)
         {
             return x >= 0 && x < columns && y >= 0 && y < rows;
         }
 
-        // Unity'nin editor-only cizim fonksiyonu.
-        // Sadece Scene view'da gorunur, oyunda gorunmez. Debug icin ideal.
+        // debug icin
         private void OnDrawGizmos()
         {
             if (!showGizmos) return;
 
             Gizmos.color = gizmoColor;
 
-            // Her hucrenin cercevesini ciz.
+            
             for (int x = 0; x < columns; x++)
             {
                 for (int y = 0; y < rows; y++)

@@ -2,8 +2,7 @@ using UnityEngine;
 
 namespace Prism
 {
-    // Isinin yonu. 4 ana yon yeterli, capraz yok.
-    // Sonra aynalar bu yonleri degistirecek.
+    // sinirli sekilde isinin gidecegi yonler
     public enum Direction
     {
         Up,
@@ -12,8 +11,7 @@ namespace Prism
         Right
     }
 
-    // Yardimci: Direction enum'unu Vector2'ye cevirir.
-    // Extension method kullandim, syntax daha temiz oluyor.
+    //  Direction enum yonlerini vector2 ye cevir
     public static class DirectionExtensions
     {
         public static Vector2 ToVector(this Direction dir) => dir switch
