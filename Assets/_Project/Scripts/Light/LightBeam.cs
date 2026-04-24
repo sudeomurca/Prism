@@ -3,17 +3,17 @@ using UnityEngine;
 
 namespace Prism
 {
-    // isinin cizilmesini yonetir
-    // raycast ile aynayi bulur, Reflect() cagirir, yonu degistirir.
+    // isinin cizilmesini yonetir, raycast ile ayna/prizma/kristal bulur
+    // NOT: artik kendi Start() icinde cizmiyor, BeamManager her frame cagiriyor
     [RequireComponent(typeof(LineRenderer))]
     public class LightBeam : MonoBehaviour
     {
         [Header("Isin Ayarlari")]
         [Tooltip("Her segmentin maksimum uzunlugu.")]
-        [SerializeField] private float maxSegmentLength = 15f;
+        [SerializeField] private float maxSegmentLength = 20f;
 
         [Tooltip("Isinin kalinligi.")]
-        [SerializeField] private float width = 0.01f;
+        [SerializeField] private float width = 0.15f;
 
         [Tooltip("Max yansima sayisi. Sonsuz dongude donmesin diye.")]
         [SerializeField] private int maxReflections = 10;
@@ -35,11 +35,6 @@ namespace Prism
             SetupLineRenderer();
         }
 
-        private void Start()
-        {
-            DrawBeam();
-        }
-
         private void SetupLineRenderer()
         {
             lineRenderer.startWidth = width;
@@ -54,60 +49,26 @@ namespace Prism
             }
         }
 
-        // isini cizdirmek icin kaynaktan basla, her ayna carpisinda yon degistir, devam et.
-        private void DrawBeam()
+        // artik BeamManager bu fonksiyonu cagiriyor
+        public void DrawBeam()
         {
-            if (source == null) return;
+            if (source == null || source.ColorData == null) return;
 
-            beamPoints.Clear();
+            // once kendi rengini tazele (editor'da degisirse de hemen gozuksun)
+            Color c = source.ColorData.displayColor;
+            lineRenderer.startColor = c;
+            lineRenderer.endColor = c;
 
-            Vector3 currentPos = source.Position;
-            Direction currentDir = source.Direction;
-
-            // ilk nokta,kaynagin pozisyonu
-            beamPoints.Add(currentPos);
-
-            for (int i = 0; i < maxReflections; i++)
-            {
-                Vector2 dirVec = currentDir.ToVector();
-
-                // raycast baslangicini biraz ileri kaydir (ayni collider'i tekrar algilamayi engeller)
-                Vector2 rayStart = (Vector2)currentPos + dirVec * RAY_OFFSET;
-                RaycastHit2D hit = Physics2D.Raycast(rayStart, dirVec, maxSegmentLength);
-
-                if (hit.collider != null)
-                {
-                    Mirror mirror = hit.collider.GetComponent<Mirror>();
-
-                    if (mirror != null)
-                    {
-                        // aynaya kadar nokta ekle
-                        beamPoints.Add(hit.point);
-
-                        // yonu degistir, yeni pozisyondan devam et
-                        currentDir = mirror.Reflect(currentDir);
-                        currentPos = hit.collider.transform.position;
-                        continue;
-                    }
-
-                    // kristal mi?
-                    Crystal crystal = hit.collider.GetComponent<Crystal>();
-                    if (crystal != null && source.ColorData != null)
-                    {
-                        // kristale isigi ver, rengi kontrol etsin
-                        crystal.ReceiveLight(source.ColorData.color);
-                    }
-
-                    // ayna disinda bir seye carptiysa orada bitir
-                    beamPoints.Add(hit.point);
-                    break;
-                }
-
-                // hicbir seye carpmazsa max mesafeye kadar ciz,bitir
-                Vector3 endPoint = currentPos + (Vector3)(dirVec * maxSegmentLength);
-                beamPoints.Add(endPoint);
-                break;
-            }
+            // isini cizmek icin ortak fonksiyonu cagiriyor
+            BeamTracer.Trace(
+                startPos: source.Position,
+                startDir: source.Direction,
+                color: source.ColorData.color,
+                maxReflections: maxReflections,
+                maxSegmentLength: maxSegmentLength,
+                rayOffset: RAY_OFFSET,
+                outPoints: beamPoints
+            );
 
             // lineRenderer'a noktalari ver
             lineRenderer.positionCount = beamPoints.Count;
