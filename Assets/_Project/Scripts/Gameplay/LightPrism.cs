@@ -2,12 +2,16 @@ using UnityEngine;
 
 namespace Prism
 {
-    
-    // farkli yonlerden gelen isiklari toplar renk karisimi yapip tek cikisa gonder
+    // 2 isigi birlestiren prizma
+    // SADECE belirli renk kombinasyonunu kabul eder, baska renk girerse cikis vermez
+    // ornek: Magenta prizma sadece Red+Blue ister, Green girerse tikanir
     [RequireComponent(typeof(CircleCollider2D))]
     public class LightPrism : MonoBehaviour
     {
         [Header("Prizma Ayarlari")]
+        [Tooltip("Bu prizma hangi rengi uretir, ScriptableObject olarak ver. Magenta/Cyan/Yellow olabilir.")]
+        [SerializeField] private LightColorData outputColorData;
+
         [Tooltip("Karisim isigi hangi yone gonderilecek.")]
         [SerializeField] private Direction outputDirection = Direction.Up;
 
@@ -15,10 +19,11 @@ namespace Prism
         [SerializeField] private float colliderRadius = 0.3f;
 
         public Direction OutputDirection => outputDirection;
+        public LightColor ExpectedOutput => outputColorData != null ? outputColorData.color : LightColor.None;
+        public Color DisplayColor => outputColorData != null ? outputColorData.displayColor : Color.gray;
         public Vector3 Position => transform.position;
 
         // bu frame'de gelen isiklar
-        // frame basinda resetlenir,isik geldikce accumulate olur
         private LightColor accumulatedColor = LightColor.None;
         private int lightsReceivedThisFrame = 0;
 
@@ -28,10 +33,25 @@ namespace Prism
         {
             circleCollider = GetComponent<CircleCollider2D>();
             circleCollider.radius = colliderRadius;
+
+            // event-driven sistem: BeamManager bizi tani diye kendimizi register ederiz
+            if (BeamManager.Instance != null) BeamManager.Instance.RegisterPrism(this);
         }
 
-        // LightBeam bu fonksiyonu cagirir, prizmaya isik gelince
-        // tek bir renkse olduğu gibi kaydet , ikinci bir renk gelirse mix
+        private void OnDestroy()
+        {
+            if (BeamManager.Instance != null) BeamManager.Instance.UnregisterPrism(this);
+        }
+
+        // LevelLoader runtime'da spawn ederken cagirir
+        public void SetConfig(LightColorData color, Direction direction)
+        {
+            outputColorData = color;
+            outputDirection = direction;
+        }
+
+        // isin geldi: accumulate et
+        // tum isiklar geldikten sonra GetOutputColor cagrildiginda dogrulama yapilir
         public void ReceiveLight(LightColor incoming)
         {
             if (lightsReceivedThisFrame == 0)
@@ -40,42 +60,29 @@ namespace Prism
             }
             else
             {
-                // ikinci isik geldi,karistir
                 accumulatedColor = LightColorData.Mix(accumulatedColor, incoming);
             }
-
             lightsReceivedThisFrame++;
         }
 
-        // prizmanin su anki cikis rengi
+        // sadece beklenen renk olustuysa cikar, yoksa None doner (isin tikanir)
         public LightColor GetOutputColor()
         {
-            return accumulatedColor;
+            return accumulatedColor == ExpectedOutput ? ExpectedOutput : LightColor.None;
         }
 
-        // hiç isin geliyor mu,min 1
-        public bool HasInput()
+        // cikis yapabilir mi
+        public bool HasValidOutput()
         {
-            return lightsReceivedThisFrame > 0;
+            return accumulatedColor == ExpectedOutput;
         }
 
-        // frame basinda resetle
+        public bool HasInput() => lightsReceivedThisFrame > 0;
+
         public void ResetFrame()
         {
             accumulatedColor = LightColor.None;
             lightsReceivedThisFrame = 0;
-        }
-
-        
-        private void OnDrawGizmos()
-        {
-            
-            Gizmos.color = Color.white;
-            Gizmos.DrawWireSphere(transform.position, colliderRadius);
-
-            // cikis yonunu ok gibi goster
-            Vector3 dirVec = outputDirection.ToVector();
-            Gizmos.DrawLine(transform.position, transform.position + dirVec * 0.5f);
         }
     }
 }

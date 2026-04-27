@@ -33,6 +33,14 @@ namespace Prism
             lineRenderer = GetComponent<LineRenderer>();
             source = GetComponent<LightSource>();
             SetupLineRenderer();
+
+            // event-driven sistem: BeamManager bizi tani diye kendimizi register ederiz
+            if (BeamManager.Instance != null) BeamManager.Instance.RegisterBeam(this);
+        }
+
+        private void OnDestroy()
+        {
+            if (BeamManager.Instance != null) BeamManager.Instance.UnregisterBeam(this);
         }
 
         private void SetupLineRenderer()

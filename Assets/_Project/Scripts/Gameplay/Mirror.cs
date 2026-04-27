@@ -2,122 +2,136 @@ using UnityEngine;
 
 namespace Prism
 {
-    // aynanin iki yerlesim tipi:
-    // Slash    -> / seklinde, sag-yukari veya asagi-sol diagonal
-    // BackSlash -> \ seklinde, sol-yukari veya asagi-sag diagonal
-    public enum MirrorType
-    {
-        Slash,
-        BackSlash
-    }
-
-    // grid uzerine yerlesen ayna
-    // isin carptiginda yonu degistirir.
-    // EdgeCollider2D otomatik olarak aynanin diagonal cizgisine yerlesir.
-    [RequireComponent(typeof(EdgeCollider2D))]
+    // diyagonal ayna, 4 farkli yonde durabilir
+    // tap olunca saat yonu TERSINE 90 derece doner (rotationIndex artar)
+    //
+    // sprite Aseprite'ta YATAY cizildi, PARLAK (yansitici) yuz UST KENARDA.
+    // rotation pozitif yon = saat tersi. Sprite'in ust kenari rotation ile birlikte
+    // su konumlara dogru bakar:
+    //   Idx 0:  +45  ->  /  parlak yuz SOL-UST
+    //   Idx 1: +135  ->  \  parlak yuz SOL-ALT
+    //   Idx 2: +225  ->  /  parlak yuz SAG-ALT
+    //   Idx 3: +315  ->  \  parlak yuz SAG-UST
+    //
+    // her durumda parlak yuze carpan 2 yon yansir (90 derece doner),
+    // diger 2 yon arkadan vurur ve durur (None).
+    [RequireComponent(typeof(BoxCollider2D))]
     public class Mirror : MonoBehaviour
     {
-        [Header("Ayna Tipi")]
-        [SerializeField] private MirrorType type = MirrorType.Slash;
+        [Header("Ayna Durumu")]
+        [Tooltip("0=/sol-ust  1=\\sol-alt  2=/sag-alt  3=\\sag-ust (parlak yuzun konumu)")]
+        [Range(0, 3)]
+        [SerializeField] private int rotationIndex = 0;
 
-        [Tooltip("Aynanin cizgisinin uzunlugu (dunya birimi).")]
-        [SerializeField] private float size = 0.8f;
+        [Header("Visual")]
+        [Tooltip("Sprite renderer referansi, gorsel rotation icin.")]
+        [SerializeField] private SpriteRenderer spriteRenderer;
 
-        private EdgeCollider2D edgeCollider;
-
-        public MirrorType Type => type;
+        public int RotationIndex => rotationIndex;
         public Vector3 Position => transform.position;
 
         private void Awake()
         {
-            edgeCollider = GetComponent<EdgeCollider2D>();
-            UpdateColliderPoints();
+            if (spriteRenderer == null)
+                spriteRenderer = GetComponent<SpriteRenderer>();
+
+            UpdateVisualRotation();
         }
 
-        // collider noktalarini aynanin tipine gore ayarla
-        // Edge collider 2 nokta arasi cizgi oluyor
-        private void UpdateColliderPoints()
+        // rotationIndex'e gore transform'u dondurur
+        // 0 -> 45, 1 -> 135, 2 -> 225, 3 -> 315
+        // animate=true ise DOTween ile yumusak gecis, false ise aninda (Awake/SetRotationIndex icin)
+        private void UpdateVisualRotation(bool animate = false)
         {
-            if (edgeCollider == null)
-                edgeCollider = GetComponent<EdgeCollider2D>();
+            float angle = 45f + rotationIndex * 90f;
 
-            float half = size / 2f;
-
-            // yeni array her seferinde garbage uretir , class seviyesinde cache'leyebilirdik
-            // ama bu sadece baslangicta calisir,bir defalik maliyet dert degil
-            Vector2[] points = new Vector2[2];
-
-            if (type == MirrorType.Slash)
+            if (animate)
             {
-                // / seklinde, sol-alt'tan sag-ust'e
-                points[0] = new Vector2(-half, -half);
-                points[1] = new Vector2(half, half);
+                AnimationHelper.RotateTo(transform, angle);
             }
             else
             {
-                // \ seklinde, sol-ust'ten sag-alt'a
-                points[0] = new Vector2(-half, half);
-                points[1] = new Vector2(half, -half);
+                transform.rotation = Quaternion.Euler(0, 0, angle);
             }
-
-            edgeCollider.points = points;
         }
 
-        // eager update, editor'da degistirince hemen gozuksun
-        // sadece editor'da calisir , runtime etkilemez
-        private void OnValidate()
+        // tap olunca saat yonu TERSINE 90 derece doner (rotationIndex artar)
+        // hamle sayilmiyor (prototip karari, sinirsiz tap)
+        public void OnTap()
         {
-            if (edgeCollider == null)
-                edgeCollider = GetComponent<EdgeCollider2D>();
-            if (edgeCollider != null)
-                UpdateColliderPoints();
+            rotationIndex = (rotationIndex + 1) % 4;
+            UpdateVisualRotation(animate: true); // tap olunca smooth animasyon
+
+            // ayna degisti, BeamManager isinlari yeniden hesaplasin
+            if (BeamManager.Instance != null) BeamManager.Instance.RecomputeBeams();
         }
 
-        // gelen yon verilince yansima yonunu hesapla
+        // LevelLoader runtime'da spawn ederken bu degeri ayarlar
+        public void SetRotationIndex(int index)
+        {
+            rotationIndex = Mathf.Clamp(index, 0, 3);
+            UpdateVisualRotation(animate: false); // spawn sirasinda aninda set, animasyon yok
+        }
+
+        // gelen yon verilince yansima yonunu dondurur.
+        // arkadan gelen (yansitici OLMAYAN yuze carpan) icin None doner.
         public Direction Reflect(Direction incoming)
         {
-            // / ayna: (Right <-> Up) ve (Left <-> Down) takas eder
-            // \ ayna: (Right <-> Down) ve (Left <-> Up) takas eder
-            if (type == MirrorType.Slash)
+            switch (rotationIndex)
             {
-                return incoming switch
-                {
-                    Direction.Right => Direction.Up,
-                    Direction.Up    => Direction.Right,
-                    Direction.Left  => Direction.Down,
-                    Direction.Down  => Direction.Left,
-                    _               => incoming
-                };
-            }
-            else // BackSlash
-            {
-                return incoming switch
-                {
-                    Direction.Right => Direction.Down,
-                    Direction.Down  => Direction.Right,
-                    Direction.Left  => Direction.Up,
-                    Direction.Up    => Direction.Left,
-                    _               => incoming
-                };
+                // Idx 0: /  parlak SOL-UST
+                // ust+sol taraflardan gelen parlak yuze carpar, yansir
+                case 0:
+                    return incoming switch
+                    {
+                        Direction.Down  => Direction.Left, // yukaridan iner  -> sola
+                        Direction.Right => Direction.Up,   // soldan gelir    -> yukari
+                        _ => Direction.None
+                    };
+
+                // Idx 1: \  parlak SOL-ALT
+                // alt+sol taraflardan gelen parlak yuze carpar, yansir
+                case 1:
+                    return incoming switch
+                    {
+                        Direction.Up    => Direction.Left, // asagidan cikar -> sola
+                        Direction.Right => Direction.Down, // soldan gelir   -> asagi
+                        _ => Direction.None
+                    };
+
+                // Idx 2: /  parlak SAG-ALT
+                // alt+sag taraflardan gelen parlak yuze carpar, yansir
+                case 2:
+                    return incoming switch
+                    {
+                        Direction.Up   => Direction.Right, // asagidan cikar -> saga
+                        Direction.Left => Direction.Down,  // sagdan gelir   -> asagi
+                        _ => Direction.None
+                    };
+
+                // Idx 3: \  parlak SAG-UST
+                // ust+sag taraflardan gelen parlak yuze carpar, yansir
+                case 3:
+                    return incoming switch
+                    {
+                        Direction.Down => Direction.Right, // yukaridan iner -> saga
+                        Direction.Left => Direction.Up,    // sagdan gelir   -> yukari
+                        _ => Direction.None
+                    };
+
+                default:
+                    return Direction.None;
             }
         }
 
-        // Scene view'da aynayi gorsel olarak ciz
-        private void OnDrawGizmos()
+        public bool CanReflect(Direction incoming) => Reflect(incoming) != Direction.None;
+
+        // Inspector'da rotationIndex degisirse gorsel de guncellesin
+        private void OnValidate()
         {
-            Gizmos.color = Color.cyan;
-
-            float half = size / 2f;
-            Vector3 pos = transform.position;
-
-            if (type == MirrorType.Slash)
-            {
-                Gizmos.DrawLine(pos + new Vector3(-half, -half, 0), pos + new Vector3(half, half, 0));
-            }
-            else
-            {
-                Gizmos.DrawLine(pos + new Vector3(-half, half, 0), pos + new Vector3(half, -half, 0));
-            }
+            if (Application.isPlaying) return;
+            rotationIndex = Mathf.Clamp(rotationIndex, 0, 3);
+            UpdateVisualRotation();
         }
     }
 }

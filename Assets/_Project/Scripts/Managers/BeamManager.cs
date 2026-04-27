@@ -3,98 +3,216 @@ using UnityEngine;
 
 namespace Prism
 {
-    // her frame sahnedeki isin sistemini yonetir
-    // akis: once hepsini resetle, sonra kaynaklari izle, sonra prizma cikislarini izle
+    // sahnedeki isin sistemini yonetir, EVENT-DRIVEN calisir
+    // her frame raycast YAPMAZ, sadece bir sey degistiginde (tap, level load) yeniden hesaplar
+    //
+    // mimari: Mirror, LightSource, LightPrism, Crystal kendileri Awake'te buraya Register olur
+    // FindObjectsByType yok, runtime'da yeni obje eklenebilir, baglanti otomatik
+    //
+    // PERFORMANCE: prizma cikis LineRenderer'lari ObjectPool'dan geliyor, Instantiate/Destroy yok
+    // mobile build'de GC tetikleyen alloc'larin onune gecer
     public class BeamManager : MonoBehaviour
     {
+        public static BeamManager Instance { get; private set; }
+
         [Header("Isin Ayarlari")]
         [SerializeField] private float prismOutputLength = 20f;
         [SerializeField] private float prismOutputWidth = 0.15f;
         [SerializeField] private int maxPrismHops = 5;
 
         [Header("Material")]
-        [Tooltip("Prizma cikisi icin kullanilacak material. Bos ise sahnedeki LightSource'tan kopyalar.")]
+        [Tooltip("Prizma cikisi icin kullanilacak material. Bos birakilirsa runtime'da uretilir.")]
         [SerializeField] private Material beamMaterial;
 
-        // sahnedeki tum parcalar,sahne yuklenince bulur, her frame arama yapmaz
-        private LightSource[] sources;
-        private LightPrism[] prisms;
-        private Crystal[] crystals;
-        private LightBeam[] beams;
+        [Header("Object Pool")]
+        [Tooltip("Prizma cikis isinlari icin onceden hazirlanacak LineRenderer sayisi.")]
+        [SerializeField] private int initialPrismLinePoolSize = 4;
 
-        // prizma cikis isinlarini cizmek icin LineRenderer havuzu
+        // sahnedeki tum parcalar, kendileri register oluyor
+        private readonly List<LightSource> sources  = new();
+        private readonly List<LightPrism>  prisms   = new();
+        private readonly List<Crystal>     crystals = new();
+        private readonly List<LightBeam>   beams    = new();
+
+        // her prizmaya hangi LineRenderer atandi, takip et (release icin gerekli)
         private readonly Dictionary<LightPrism, LineRenderer> prismOutputLines = new();
 
-        // geri kullanilabilir liste,her frame yeni liste allocate etmemek icin
-        private readonly List<Vector3> tempPoints = new List<Vector3>(16);
+        // prizma cikis LineRenderer'lari icin generic pool
+        // tek seferlik kurulur, level boyunca yeniden kullanilir
+        private ObjectPool<LineRenderer> prismLinePool;
+
+        // pool'un parent'i, hierarchy temiz kalsin diye
+        private Transform poolParent;
+
+        // geri kullanilabilir liste, allocation olmasin diye
+        private readonly List<Vector3> tempPoints = new(16);
+
+        // ilk frame'de henuz kimse register olmamis olabilir,
+        // o yuzden Start'ta bir kere otomatik recompute yapariz
+        private bool initialComputeDone = false;
+
+        private void Awake()
+        {
+            if (Instance != null && Instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
+            Instance = this;
+        }
 
         private void Start()
         {
-            // sahnedeki tum ilgili objeleri bir defa bul, cache'le
-            sources = FindObjectsByType<LightSource>(FindObjectsSortMode.None);
-            prisms = FindObjectsByType<LightPrism>(FindObjectsSortMode.None);
-            crystals = FindObjectsByType<Crystal>(FindObjectsSortMode.None);
-            beams = FindObjectsByType<LightBeam>(FindObjectsSortMode.None);
+            EnsureMaterial();
+            InitPrismLinePool();
 
-            // eger inspector'dan material atanmamissa,sahnedeki ilk LightBeam'den kopyala
-            // boylece URP/built-in uyumsuzluk sorunu olmaz
-            if (beamMaterial == null && beams.Length > 0)
+            // sahnedeki herkes kendini register etti, simdi ilk hesaplamayi yap
+            // FALLBACK: birisi Instance henuz yokken Awake'te kosmus olabilir,
+            // bu durumda kayit kacirmis olur. Garanti olarak sahneyi tarayip eksikleri ekleyelim.
+            CollectMissingObjectsFromScene();
+
+            initialComputeDone = true;
+            RecomputeBeams();
+        }
+
+        // sahnede register olmamis parcalari yakalar (Awake sirasi yanlis gittiyse koruma)
+        private void CollectMissingObjectsFromScene()
+        {
+            foreach (var s in FindObjectsByType<LightSource>(FindObjectsSortMode.None)) RegisterSource(s);
+            foreach (var b in FindObjectsByType<LightBeam>(FindObjectsSortMode.None))   RegisterBeam(b);
+            foreach (var c in FindObjectsByType<Crystal>(FindObjectsSortMode.None))     RegisterCrystal(c);
+            foreach (var p in FindObjectsByType<LightPrism>(FindObjectsSortMode.None))  RegisterPrism(p);
+        }
+
+        // inspector'dan material atanmamissa runtime'da uret
+        private void EnsureMaterial()
+        {
+            if (beamMaterial != null) return;
+
+            Shader sh = Shader.Find("Sprites/Default");
+            if (sh != null)
             {
-                LineRenderer firstLR = beams[0].GetComponent<LineRenderer>();
-                if (firstLR != null && firstLR.sharedMaterial != null)
+                beamMaterial = new Material(sh);
+            }
+            else
+            {
+                Debug.LogWarning("[BeamManager] Sprites/Default shader bulunamadi.");
+            }
+        }
+
+        // pool icin LineRenderer prefab'i runtime'da uretilir
+        // Inspector'dan prefab istemiyoruz, kurulumu kolaylastirmak icin
+        private void InitPrismLinePool()
+        {
+            // pool icindeki nesnelerin parent'i, hierarchy duzeni icin
+            poolParent = new GameObject("[BeamLinePool]").transform;
+            poolParent.SetParent(transform);
+
+            // template GameObject yarat, pool bunu klonlayacak
+            GameObject template = new GameObject("PrismOutputLine");
+            LineRenderer templateLR = template.AddComponent<LineRenderer>();
+            templateLR.startWidth = prismOutputWidth;
+            templateLR.endWidth = prismOutputWidth;
+            templateLR.useWorldSpace = true;
+            templateLR.positionCount = 0;
+            templateLR.sortingOrder = 2;
+            if (beamMaterial != null) templateLR.material = beamMaterial;
+
+            // template inactive bekler, pool ondan klonlayacak
+            template.SetActive(false);
+            template.transform.SetParent(poolParent);
+
+            prismLinePool = new ObjectPool<LineRenderer>(
+                prefab: templateLR,
+                parent: poolParent,
+                initialSize: initialPrismLinePoolSize
+            );
+        }
+
+        // ---- REGISTRATION API ----
+        // her parca kendi Awake'inde buraya kaydolur
+
+        public void RegisterSource(LightSource s)  { if (!sources.Contains(s))  sources.Add(s); }
+        public void RegisterBeam(LightBeam b)      { if (!beams.Contains(b))    beams.Add(b); }
+        public void RegisterCrystal(Crystal c)     { if (!crystals.Contains(c)) crystals.Add(c); }
+
+        public void RegisterPrism(LightPrism p)
+        {
+            if (prisms.Contains(p)) return;
+            prisms.Add(p);
+            // pool henuz kurulmamissa Start sonrasi register olunca SetupPrismOutputLine cagrilir
+            if (prismLinePool != null) AssignLineToPrism(p);
+        }
+
+        // unregister: obje destroy olunca cagirilir
+        public void UnregisterSource(LightSource s)  => sources.Remove(s);
+        public void UnregisterBeam(LightBeam b)      => beams.Remove(b);
+        public void UnregisterCrystal(Crystal c)     => crystals.Remove(c);
+
+        public void UnregisterPrism(LightPrism p)
+        {
+            prisms.Remove(p);
+            // LineRenderer'i destroy ETMIYORUZ, pool'a geri veriyoruz
+            if (prismOutputLines.TryGetValue(p, out LineRenderer lr) && lr != null)
+            {
+                lr.positionCount = 0; // temizle
+                prismLinePool.Release(lr);
+            }
+            prismOutputLines.Remove(p);
+        }
+
+        // ---- PUBLIC API ----
+        // herhangi bir parca degistiginde (tap, level load) burayi cagir
+        // bu butun isin sistemini yeniden hesaplar
+        public void RecomputeBeams()
+        {
+            // henuz Start cagrilmadi ise material yok, bekle (Mirror Awake'te tetiklerse)
+            if (!initialComputeDone) return;
+
+            ResetState();
+
+            // Start sonrasi register olmus prizmalar icin line eksikligi olabilir, kontrol et
+            foreach (var prism in prisms)
+            {
+                if (prism != null && !prismOutputLines.ContainsKey(prism))
                 {
-                    beamMaterial = firstLR.sharedMaterial;
+                    AssignLineToPrism(prism);
                 }
             }
 
-            // her prizma icin bir cikis line renderer hazirla
-            foreach (var prism in prisms)
+            // tum kaynaklar isinlarini cizsin
+            foreach (var beam in beams)
             {
-                SetupPrismOutputLine(prism);
+                if (beam != null) beam.DrawBeam();
             }
+
+            // prizmalardan cikan ikinci kademe isinlari cizsin
+            ProcessPrismOutputs();
+
+            // tum kristaller aktif mi diye kontrol et
+            CheckWinCondition();
         }
 
-        // her prizma icin ayri bir GameObject + LineRenderer yarat
-        private void SetupPrismOutputLine(LightPrism prism)
+        // ---- INTERNAL ----
+
+        // bir prizma icin pool'dan LineRenderer al, prizma child'i yap
+        private void AssignLineToPrism(LightPrism prism)
         {
-            GameObject lineGO = new GameObject("PrismOutput");
-            lineGO.transform.SetParent(prism.transform);
-
-            LineRenderer lr = lineGO.AddComponent<LineRenderer>();
-            lr.startWidth = prismOutputWidth;
-            lr.endWidth = prismOutputWidth;
-            lr.useWorldSpace = true;
+            LineRenderer lr = prismLinePool.Get();
+            lr.transform.SetParent(prism.transform);
+            lr.transform.localPosition = Vector3.zero;
             lr.positionCount = 0;
-
-            // LightBeam'den aldigimiz materyali kullan
-            if (beamMaterial != null)
-            {
-                lr.material = beamMaterial;
-            }
-
             prismOutputLines[prism] = lr;
         }
 
-        // her frame yeniden hesapla
-        private void LateUpdate()
-        {
-            ResetAll();
-
-            foreach (var beam in beams)
-            {
-                beam.DrawBeam();
-            }
-
-            ProcessPrismOutputs();
-        }
-
-        private void ResetAll()
+        private void ResetState()
         {
             foreach (var prism in prisms)
             {
+                if (prism == null) continue;
                 prism.ResetFrame();
 
-                if (prismOutputLines.TryGetValue(prism, out LineRenderer lr))
+                if (prismOutputLines.TryGetValue(prism, out LineRenderer lr) && lr != null)
                 {
                     lr.positionCount = 0;
                 }
@@ -102,32 +220,33 @@ namespace Prism
 
             foreach (var crystal in crystals)
             {
-                crystal.Deactivate();
+                if (crystal != null) crystal.Deactivate();
             }
         }
 
-        // prizmalardan cikan isinlari izle
         private void ProcessPrismOutputs()
         {
             foreach (var prism in prisms)
             {
+                if (prism == null) continue;
                 if (!prism.HasInput()) continue;
+                if (!prism.HasValidOutput()) continue; // yanlis renk gelmis, tikanir
 
                 LightColor outputColor = prism.GetOutputColor();
+                Collider2D prismCollider = prism.GetComponent<Collider2D>();
 
-                // prizma cikisi icin daha buyuk offset: cikis isini kendi collider'indan cikabilsin
-                // prizma yariapi 0.3, ekstra pay ile 0.5 offset guvenli
                 BeamTracer.Trace(
                     startPos: prism.Position,
                     startDir: prism.OutputDirection,
                     color: outputColor,
                     maxReflections: maxPrismHops,
                     maxSegmentLength: prismOutputLength,
-                    rayOffset: 0.5f,
-                    outPoints: tempPoints
+                    rayOffset: 0.1f,
+                    outPoints: tempPoints,
+                    ignoreCollider: prismCollider
                 );
 
-                if (prismOutputLines.TryGetValue(prism, out LineRenderer lr))
+                if (prismOutputLines.TryGetValue(prism, out LineRenderer lr) && lr != null)
                 {
                     lr.positionCount = tempPoints.Count;
                     for (int i = 0; i < tempPoints.Count; i++)
@@ -135,24 +254,31 @@ namespace Prism
                         lr.SetPosition(i, tempPoints[i]);
                     }
 
-                    Color displayColor = GetColorForLightColor(outputColor);
-                    lr.startColor = displayColor;
-                    lr.endColor = displayColor;
+                    // renk direkt prizmanin kendi ScriptableObject'inden geliyor
+                    lr.startColor = prism.DisplayColor;
+                    lr.endColor = prism.DisplayColor;
                 }
             }
         }
 
-        // basit LightColor -> Color donusumu
-        private Color GetColorForLightColor(LightColor lc) => lc switch
+        private void CheckWinCondition()
         {
-            LightColor.Red     => Color.red,
-            LightColor.Green   => Color.green,
-            LightColor.Blue    => Color.blue,
-            LightColor.Yellow  => Color.yellow,
-            LightColor.Magenta => Color.magenta,
-            LightColor.Cyan    => Color.cyan,
-            LightColor.White   => Color.white,
-            _                  => Color.gray
-        };
+            if (GameManager.Instance == null) return;
+            if (GameManager.Instance.CurrentState == GameState.LevelComplete) return;
+            if (crystals.Count == 0) return;
+
+            foreach (var crystal in crystals)
+            {
+                if (crystal == null || !crystal.IsActivated) return;
+            }
+
+            GameManager.Instance.CompleteLevel();
+        }
+
+        private void OnDestroy()
+        {
+            // pool'u temizle, sahne kapanirken
+            prismLinePool?.Clear();
+        }
     }
 }

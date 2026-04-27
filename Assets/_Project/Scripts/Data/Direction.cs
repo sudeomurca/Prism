@@ -3,8 +3,10 @@ using UnityEngine;
 namespace Prism
 {
     // sinirli sekilde isinin gidecegi yonler
+    // None = yansima yok , ozel durum icin
     public enum Direction
     {
+        None,
         Up,
         Down,
         Left,

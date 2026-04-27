@@ -15,7 +15,7 @@ namespace Prism
     }
 
     //datamizdan kolay sekilde asset uretebilmek icin menu olustur
-    [CreateAssetMenu(fileName = "NewLightColor", menuName = "Prism/Light Color Data")]
+    [CreateAssetMenu(fileName = "NewLightColor", menuName = "Prism/Light Color")]
     public class LightColorData : ScriptableObject
     {
         public LightColor color = LightColor.Red;
@@ -37,7 +37,8 @@ namespace Prism
             // renkler ayniysa ayni kalir
             _ when a == b => a,
 
-            // TODO
+            // tanimsiz kombinasyon (orn. Yellow + Blue gibi 2.kademe karisim)
+            // additive light mixing'de tum primaries -> White, default davranis bu
             _ => LightColor.White
         };
     }

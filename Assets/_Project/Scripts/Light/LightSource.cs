@@ -2,7 +2,8 @@ using UnityEngine;
 
 namespace Prism
 {
-    
+    // grid uzerinde duran isik kaynagi
+    // yon ve renk level designer tarafindan ayarlanir, oyuncu mudahale edemez
     public class LightSource : MonoBehaviour
     {
         [Header("Isik Ayarlari")]
@@ -12,23 +13,29 @@ namespace Prism
         [Tooltip("Isinin hangi yone dogru cikacagi.")]
         [SerializeField] private Direction direction = Direction.Up;
 
-        // get var set yok
+        // get var, set yok , disaridan degistirilemez
         public LightColorData ColorData => colorData;
         public Direction Direction => direction;
 
-        // world pozisyonunu getir (baska scriptlerin kullanimi icin)
+        // baska scriptlerin kullanmasi icin world pozisyonu
         public Vector3 Position => transform.position;
 
-        // debug
-        private void OnDrawGizmos()
+        // event-driven sistem: BeamManager bizi tani diye Awake'te kendimizi register ederiz
+        private void Awake()
         {
-            
-            Gizmos.color = colorData != null ? colorData.displayColor : Color.white;
-            Gizmos.DrawSphere(transform.position, 0.25f);
+            if (BeamManager.Instance != null) BeamManager.Instance.RegisterSource(this);
+        }
 
-            
-            Vector3 dirVector = direction.ToVector();
-            Gizmos.DrawLine(transform.position, transform.position + dirVector * 0.6f);
+        private void OnDestroy()
+        {
+            if (BeamManager.Instance != null) BeamManager.Instance.UnregisterSource(this);
+        }
+
+        // LevelLoader runtime'da bu kaynagi spawn ederken cagirir
+        public void SetConfig(LightColorData newColor, Direction newDir)
+        {
+            colorData = newColor;
+            direction = newDir;
         }
     }
 }
