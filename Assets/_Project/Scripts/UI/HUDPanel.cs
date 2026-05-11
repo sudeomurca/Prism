@@ -53,6 +53,7 @@ namespace Prism
 
         private void OnRestartClicked()
         {
+            if (AudioManager.Instance != null) AudioManager.Instance.PlaySfx(SfxId.UiClick);
             if (GameManager.Instance != null) GameManager.Instance.RestartLevel();
         }
     }

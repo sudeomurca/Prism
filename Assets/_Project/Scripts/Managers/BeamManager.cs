@@ -41,8 +41,8 @@ namespace Prism
         // tek seferlik kurulur, level boyunca yeniden kullanilir
         private ObjectPool<LineRenderer> prismLinePool;
 
-        // pool'un parent'i, hierarchy temiz kalsin diye
-        private Transform poolParent;
+        // pool'un parent'i, hierarchy temiz kalsin diye - InitPrismLinePool icinde lokal kullanilir
+        // (eskiden field'di ama dis kullanim yoktu, lokal'e cektik)
 
         // geri kullanilabilir liste, allocation olmasin diye
         private readonly List<Vector3> tempPoints = new(16);
@@ -75,7 +75,12 @@ namespace Prism
             RecomputeBeams();
         }
 
-        // sahnede register olmamis parcalari yakalar (Awake sirasi yanlis gittiyse koruma)
+        // sahnede register olmamis parcalari yakalar
+        // FindObjectsByType normalde anti-pattern (self-registration tercih ederiz),
+        // ama burada DEFENSIVE FALLBACK olarak kullanilir:
+        // bir parca Awake'te BeamManager.Instance == null iken cagriyi kacirmis olabilir
+        // (Script Execution Order ayarlanmamis, edge case). Start'ta tek seferlik tarama,
+        // performans cok kucuk, garantili kayit saglar.
         private void CollectMissingObjectsFromScene()
         {
             foreach (var s in FindObjectsByType<LightSource>(FindObjectsSortMode.None)) RegisterSource(s);
@@ -105,7 +110,8 @@ namespace Prism
         private void InitPrismLinePool()
         {
             // pool icindeki nesnelerin parent'i, hierarchy duzeni icin
-            poolParent = new GameObject("[BeamLinePool]").transform;
+            // lokal: dis kullanim yok, baska metoda lazim degil
+            Transform poolParent = new GameObject("[BeamLinePool]").transform;
             poolParent.SetParent(transform);
 
             // template GameObject yarat, pool bunu klonlayacak
@@ -189,18 +195,28 @@ namespace Prism
             // prizmalardan cikan ikinci kademe isinlari cizsin
             ProcessPrismOutputs();
 
+            // tum isinlar islendi, simdi kristaller pending state'lerini resolve etsin
+            // (hic isin gelmemis kristaller pasif olur, isin gelmis olanlar aktif kalir)
+            // bu sayede kristal recompute basinda Deactivate edildi diye "yeniden yandi" gibi davranmaz
+            foreach (var crystal in crystals)
+            {
+                if (crystal != null) crystal.ResolvePendingState();
+            }
+
             // tum kristaller aktif mi diye kontrol et
             CheckWinCondition();
         }
 
         // ---- INTERNAL ----
 
-        // bir prizma icin pool'dan LineRenderer al, prizma child'i yap
+        // bir prizma icin pool'dan LineRenderer al, pool parent'inda kalsin
+        // prizma destroy olunca LineRenderer destroy OLMASIN diye child YAPMIYORUZ
+        // pozisyonu prizmadan bagimsiz, useWorldSpace=true zaten kullaniliyor
         private void AssignLineToPrism(LightPrism prism)
         {
             LineRenderer lr = prismLinePool.Get();
-            lr.transform.SetParent(prism.transform);
-            lr.transform.localPosition = Vector3.zero;
+            // child YAPMA: lr.transform.SetParent(prism.transform);
+            // pool parent'inda kalmasi yeterli (template SetParent ile poolParent'a baglandi)
             lr.positionCount = 0;
             prismOutputLines[prism] = lr;
         }
@@ -229,16 +245,21 @@ namespace Prism
             foreach (var prism in prisms)
             {
                 if (prism == null) continue;
-                if (!prism.HasInput()) continue;
-                if (!prism.HasValidOutput()) continue; // yanlis renk gelmis, tikanir
 
+                // GetOutputColor zaten butun kontrolleri yapar:
+                // - iki yariya da isin geldi mi?
+                // - karisim beklenen renk mi?
+                // None donerse prizma cikisi cizilmez (isin tikanir)
                 LightColor outputColor = prism.GetOutputColor();
+                if (outputColor == LightColor.None) continue;
+
                 Collider2D prismCollider = prism.GetComponent<Collider2D>();
 
                 BeamTracer.Trace(
                     startPos: prism.Position,
                     startDir: prism.OutputDirection,
                     color: outputColor,
+                    displayColor: prism.DisplayColor,
                     maxReflections: maxPrismHops,
                     maxSegmentLength: prismOutputLength,
                     rayOffset: 0.1f,
@@ -272,7 +293,27 @@ namespace Prism
                 if (crystal == null || !crystal.IsActivated) return;
             }
 
-            GameManager.Instance.CompleteLevel();
+            // tum kristallerin merkez pozisyonunu hesapla, konfeti orada patlasin
+            // tek kristal varsa onun pozisyonu, birden fazla varsa centroid
+            Vector3 winCenter = ComputeCrystalsCenter();
+            GameManager.Instance.CompleteLevel(winCenter);
+        }
+
+        // tum aktif kristallerin ortalama pozisyonu (konfeti spawn noktasi icin)
+        private Vector3 ComputeCrystalsCenter()
+        {
+            if (crystals.Count == 0) return Vector3.zero;
+
+            Vector3 sum = Vector3.zero;
+            int count = 0;
+            foreach (var c in crystals)
+            {
+                if (c == null) continue;
+                sum += c.transform.position;
+                count++;
+            }
+
+            return count > 0 ? sum / count : Vector3.zero;
         }
 
         private void OnDestroy()

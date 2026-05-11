@@ -2,29 +2,40 @@ using UnityEngine;
 
 namespace Prism
 {
+    //  isik kaynagi renkleri
+    // none isik yok demek (yanlis prizma kombinasyonu icin)
     public enum LightColor
     {
         None,
         Red,
         Green,
         Blue,
-        Yellow,    
-        Magenta,   
-        Cyan,      
-        White      
+        Yellow,
+        Magenta,
+        Cyan
     }
 
-    //datamizdan kolay sekilde asset uretebilmek icin menu olustur
+    
     [CreateAssetMenu(fileName = "NewLightColor", menuName = "Prism/Light Color")]
     public class LightColorData : ScriptableObject
     {
         public LightColor color = LightColor.Red;
         public Color displayColor = Color.red;
 
-        
-        //karisim rengini dondur
+        [Header("Sprites")]
+        [Tooltip("Bu renge ait kristal sprite")]
+        public Sprite crystalSprite;
+
+        [Tooltip("Bu renge ait isik kaynagi sprite")]
+        public Sprite lightSourceSprite;
+
+        // iki rengi karistir, sonuc rengi dondur
         public static LightColor Mix(LightColor a, LightColor b) => (a, b) switch
         {
+            // ayni renkse degisim yok
+            _ when a == b => a,
+
+            // renk karisim sonuclari (mix sirasi onemsiz)
             (LightColor.Red,   LightColor.Green) => LightColor.Yellow,
             (LightColor.Green, LightColor.Red)   => LightColor.Yellow,
 
@@ -34,12 +45,9 @@ namespace Prism
             (LightColor.Green, LightColor.Blue)  => LightColor.Cyan,
             (LightColor.Blue,  LightColor.Green) => LightColor.Cyan,
 
-            // renkler ayniysa ayni kalir
-            _ when a == b => a,
-
-            // tanimsiz kombinasyon (orn. Yellow + Blue gibi 2.kademe karisim)
-            // additive light mixing'de tum primaries -> White, default davranis bu
-            _ => LightColor.White
+            // tanimsiz kombinasyon 
+            // -> None doner ve prizma cikis vermez
+            _ => LightColor.None
         };
     }
 }

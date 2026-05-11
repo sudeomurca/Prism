@@ -6,8 +6,10 @@ using UnityEngine.UI;
 namespace Prism
 {
     // level bittiginde acilan panel
-    // "Level Complete" mesaji + "Next Level" butonu icerir
-    // animasyonlu show/hide gecisleri DOTween ile
+    // iki modu var:
+    //   NORMAL: Level Complete basligi, Next butonu, ikon Restart butonu
+    //   FINAL:  Level Complete basligi + All Done alt yazisi, sadece "Level 1'den yeniden oyna" butonu
+    // hangi mod GameManager.IsOnLastLevel'a gore karar verilir
     public class LevelCompletePanel : MonoBehaviour
     {
         [Header("Referanslar")]
@@ -17,11 +19,17 @@ namespace Prism
         [Tooltip("Icerigi tutan transform, scale animasyonu icin.")]
         [SerializeField] private RectTransform contentTransform;
 
-        [Tooltip("Bir sonraki level'a gecis butonu.")]
+        [Tooltip("All Done alt yazisi (sadece FINAL modda gorunur).")]
+        [SerializeField] private GameObject allDoneText;
+
+        [Tooltip("Bir sonraki level'a gecis butonu (sadece NORMAL modda gorunur).")]
         [SerializeField] private Button nextButton;
 
-        [Tooltip("Restart butonu (opsiyonel).")]
-        [SerializeField] private Button restartButton;
+        [Tooltip("Ikon seklinde restart butonu (sadece NORMAL modda gorunur, current level'i restart eder).")]
+        [SerializeField] private Button restartButtonIcon;
+
+        [Tooltip("Text'li 'Level 1'den yeniden oyna' butonu (sadece FINAL modda gorunur).")]
+        [SerializeField] private Button restartFromStartButton;
 
         [Header("Animasyon")]
         [SerializeField] private float fadeInDuration = 0.3f;
@@ -30,13 +38,11 @@ namespace Prism
         private void Awake()
         {
             if (nextButton != null)
-            {
                 nextButton.onClick.AddListener(OnNextClicked);
-            }
-            if (restartButton != null)
-            {
-                restartButton.onClick.AddListener(OnRestartClicked);
-            }
+            if (restartButtonIcon != null)
+                restartButtonIcon.onClick.AddListener(OnRestartCurrentClicked);
+            if (restartFromStartButton != null)
+                restartFromStartButton.onClick.AddListener(OnRestartFromStartClicked);
 
             // baslangicta gizli
             if (canvasGroup != null) canvasGroup.alpha = 0f;
@@ -45,17 +51,22 @@ namespace Prism
 
         private void OnDestroy()
         {
-            if (nextButton != null) nextButton.onClick.RemoveListener(OnNextClicked);
-            if (restartButton != null) restartButton.onClick.RemoveListener(OnRestartClicked);
+            if (nextButton != null)
+                nextButton.onClick.RemoveListener(OnNextClicked);
+            if (restartButtonIcon != null)
+                restartButtonIcon.onClick.RemoveListener(OnRestartCurrentClicked);
+            if (restartFromStartButton != null)
+                restartFromStartButton.onClick.RemoveListener(OnRestartFromStartClicked);
         }
 
         // ---- PUBLIC API ----
 
-        public void Show()
+        public void Show(bool isFinal)
         {
+            ApplyMode(isFinal);
+
             gameObject.SetActive(true);
 
-            // fade-in + scale-up combo
             if (canvasGroup != null)
             {
                 canvasGroup.DOKill(complete: false);
@@ -73,7 +84,6 @@ namespace Prism
 
         public void Hide()
         {
-            // fade-out, sonra deactivate
             if (canvasGroup != null)
             {
                 canvasGroup.DOKill(complete: false);
@@ -86,16 +96,38 @@ namespace Prism
             }
         }
 
+        // ---- INTERNAL ----
+
+        // moda gore butonlari ve all done yazisini ac/kapat
+        // NORMAL: Next + ikon Restart goster, AllDone text ve Restart from Start gizle
+        // FINAL: Next gizle, AllDone text + ikon Restart + Restart from Start goster
+        // (FINAL'da ikon Restart ACIK kalir cunku oyuncu son leveli da yeniden oynamak isteyebilir)
+        private void ApplyMode(bool isFinal)
+        {
+            if (allDoneText != null)            allDoneText.SetActive(isFinal);
+            if (nextButton != null)             nextButton.gameObject.SetActive(!isFinal);
+            if (restartButtonIcon != null)      restartButtonIcon.gameObject.SetActive(true); // her iki modda da gorunur
+            if (restartFromStartButton != null) restartFromStartButton.gameObject.SetActive(isFinal);
+        }
+
         // ---- BUTTON CALLBACKS ----
 
         private void OnNextClicked()
         {
+            if (AudioManager.Instance != null) AudioManager.Instance.PlaySfx(SfxId.UiClick);
             if (GameManager.Instance != null) GameManager.Instance.NextLevel();
         }
 
-        private void OnRestartClicked()
+        private void OnRestartCurrentClicked()
         {
+            if (AudioManager.Instance != null) AudioManager.Instance.PlaySfx(SfxId.UiClick);
             if (GameManager.Instance != null) GameManager.Instance.RestartLevel();
+        }
+
+        private void OnRestartFromStartClicked()
+        {
+            if (AudioManager.Instance != null) AudioManager.Instance.PlaySfx(SfxId.UiClick);
+            if (GameManager.Instance != null) GameManager.Instance.RestartFromBeginning();
         }
     }
 }

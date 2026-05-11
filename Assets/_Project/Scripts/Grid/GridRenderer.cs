@@ -32,15 +32,6 @@ namespace Prism
 
         private void BuildGrid()
         {
-            // eski hucreler varsa temizle (yeniden build edebilmek icin)
-            for (int i = transform.childCount - 1; i >= 0; i--)
-            {
-                if (transform.GetChild(i).name.StartsWith("Cell_"))
-                {
-                    DestroyImmediate(transform.GetChild(i).gameObject);
-                }
-            }
-
             if (cellSprite == null)
             {
                 Debug.LogWarning("[GridRenderer] Cell sprite atanmamis. Inspector'dan sprite ver.");

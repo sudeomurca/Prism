@@ -13,6 +13,7 @@ namespace Prism
         public static UIManager Instance { get; private set; }
 
         [Header("Panel Referanslari")]
+        [SerializeField] private SplashPanel splashPanel;
         [SerializeField] private HUDPanel hudPanel;
         [SerializeField] private LevelCompletePanel levelCompletePanel;
 
@@ -29,17 +30,26 @@ namespace Prism
         private void Start()
         {
             // GameManager event'lerine subscribe ol
-            // GameManager Singleton olmasi gerek, Awake'te Instance set edilmis olmali
-            if (GameManager.Instance != null)
+            // Start tum Awake'lerden sonra calistigi icin Instance set edilmis olmali
+            if (GameManager.Instance == null)
             {
-                GameManager.Instance.OnLevelLoaded   += HandleLevelLoaded;
-                GameManager.Instance.OnLevelComplete += HandleLevelComplete;
-                GameManager.Instance.OnLevelRestart  += HandleLevelRestart;
+                Debug.LogError("[UIManager] GameManager.Instance bulunamadi. Sahnede GameManager var mi?");
+                return;
             }
 
-            // baslangicta level complete paneli kapali, HUD acik
+            GameManager.Instance.OnLevelLoaded   += HandleLevelLoaded;
+            GameManager.Instance.OnLevelComplete += HandleLevelComplete;
+            GameManager.Instance.OnLevelRestart  += HandleLevelRestart;
+
+            // splash panel start butonunu dinle, basinca HUD'i goster
+            // splash acikken HUD gizli olmali ("LEVEL 1" yazisi splash arkasindan peeklemesin)
+            if (splashPanel != null)
+            {
+                splashPanel.OnStartPressed += HandleSplashStarted;
+                if (hudPanel != null) hudPanel.Hide();
+            }
+
             if (levelCompletePanel != null) levelCompletePanel.Hide();
-            if (hudPanel != null) hudPanel.Show();
         }
 
         private void OnDestroy()
@@ -51,9 +61,17 @@ namespace Prism
                 GameManager.Instance.OnLevelComplete -= HandleLevelComplete;
                 GameManager.Instance.OnLevelRestart  -= HandleLevelRestart;
             }
+
+            if (splashPanel != null) splashPanel.OnStartPressed -= HandleSplashStarted;
         }
 
         // ---- EVENT HANDLERS ----
+
+        // splash panel start butonu basildi, oyuna gec
+        private void HandleSplashStarted()
+        {
+            if (hudPanel != null) hudPanel.Show();
+        }
 
         private void HandleLevelLoaded(LevelData data)
         {
@@ -63,7 +81,9 @@ namespace Prism
 
         private void HandleLevelComplete()
         {
-            if (levelCompletePanel != null) levelCompletePanel.Show();
+            // son level ise final mod ile ac (All Done mesaji)
+            bool isFinal = GameManager.Instance != null && GameManager.Instance.IsOnLastLevel;
+            if (levelCompletePanel != null) levelCompletePanel.Show(isFinal);
         }
 
         private void HandleLevelRestart()

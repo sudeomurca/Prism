@@ -1,0 +1,50 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 968c507848287944c911491aded03492, type: 3}
+  m_Name: Level_05
+  m_EditorClassIdentifier: Assembly-CSharp::Prism.LevelData
+  levelNumber: 5
+  levelName: Twin Prisms
+  lightSources:
+  - position: {x: -3, y: -2}
+    direction: 1
+    colorData: {fileID: 11400000, guid: 67b01065e4cb3ed4fb550a65e2482191, type: 2}
+  - position: {x: -1, y: -2}
+    direction: 1
+    colorData: {fileID: 11400000, guid: 05508ad3c46b3544e8da7e21af8e813f, type: 2}
+  - position: {x: 1, y: -2}
+    direction: 1
+    colorData: {fileID: 11400000, guid: 05508ad3c46b3544e8da7e21af8e813f, type: 2}
+  - position: {x: 3, y: -2}
+    direction: 1
+    colorData: {fileID: 11400000, guid: c5fc9340871f5374a8ba5af380426ebe, type: 2}
+  mirrors:
+  - position: {x: -3, y: 1}
+    rotationIndex: 0
+  - position: {x: -1, y: 1}
+    rotationIndex: 0
+  - position: {x: 1, y: 1}
+    rotationIndex: 0
+  - position: {x: 3, y: 1}
+    rotationIndex: 0
+  crystals:
+  - position: {x: -2, y: 4}
+    requiredColor: {fileID: 11400000, guid: cef481379d4a66d4a9fed760115fff1a, type: 2}
+  - position: {x: 2, y: 4}
+    requiredColor: {fileID: 11400000, guid: 3aa3684ca2a45b84886cca2574066d68, type: 2}
+  prisms:
+  - position: {x: -2, y: 1}
+    outputDirection: 1
+    outputColorData: {fileID: 11400000, guid: cef481379d4a66d4a9fed760115fff1a, type: 2}
+  - position: {x: 2, y: 1}
+    outputDirection: 1
+    outputColorData: {fileID: 11400000, guid: 3aa3684ca2a45b84886cca2574066d68, type: 2}

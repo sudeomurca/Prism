@@ -14,3 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Prism.LevelDatabase
   levels:
   - {fileID: 11400000, guid: 81fc4d38d5c4cdc439a2ca5fda15b29c, type: 2}
+  - {fileID: 11400000, guid: e33f5ef65bf84ae4f95e0ae70fb0c4ed, type: 2}
+  - {fileID: 11400000, guid: 528a0025b06e251438eb50baa9df7690, type: 2}
+  - {fileID: 11400000, guid: 184a1f6d9b873b34085b53232da5c5c2, type: 2}
+  - {fileID: 11400000, guid: 90dc86a55fced8341a72bba1025188cf, type: 2}

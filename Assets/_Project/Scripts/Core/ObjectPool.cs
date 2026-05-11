@@ -51,17 +51,23 @@ namespace Prism
 
         // havuzdan bir nesne al
         // havuz bossa otomatik yeni yaratir (pool dynamic grows)
+        // pool icindeki nesne destroy edilmisse (=null) onu atlayip yeni alir veya yaratir
         public T Get()
         {
-            T instance;
+            T instance = null;
 
-            if (available.Count > 0)
+            // pool icinde destroy edilmis nesneler olabilir, onlari atla
+            while (available.Count > 0)
             {
                 instance = available.Dequeue();
+                if (instance != null) break;
+                // null bulduk (destroy edilmis), bir sonrakine bak
+                instance = null;
             }
-            else
+
+            if (instance == null)
             {
-                // havuz yetersiz, dinamik buyut
+                // havuz bos veya tum nesneler destroy edilmis, dinamik buyut
                 instance = CreateInstance();
             }
 
@@ -88,10 +94,10 @@ namespace Prism
         }
 
         // tum aktif nesneleri toplu olarak geri ver (level resetinde kullanisli)
+        // Release()'i tek tek cagirmak yerine direkt foreach + Clear yapariz,
+        // ayni isi yapar ama tek seferde HashSet temizlenir (daha hizli)
         public void ReleaseAll()
         {
-            // inUse uzerinde while ile gez, cunku Release modify ediyor
-            // copy yapmak istemiyoruz allocation icin
             foreach (var instance in inUse)
             {
                 if (instance != null)

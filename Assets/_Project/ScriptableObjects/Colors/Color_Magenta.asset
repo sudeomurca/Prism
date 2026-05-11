@@ -14,3 +14,5 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Prism.LightColorData
   color: 5
   displayColor: {r: 0.54509807, g: 0, b: 0.54509807, a: 1}
+  crystalSprite: {fileID: 21300000, guid: 4ba69a5823698be40b9a850d759cd931, type: 3}
+  lightSourceSprite: {fileID: 0}

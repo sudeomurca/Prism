@@ -23,6 +23,10 @@ namespace Prism
         [Tooltip("Player'in en son kaldigi level'i kaydet/yukle.")]
         [SerializeField] private bool usePlayerPrefs = true;
 
+        [Header("Win Timing")]
+        [Tooltip("Level complete olduktan sonra panelin acilmasi icin bekleme suresi (saniye). Oyuncu kazandigini hissetsin diye.")]
+        [SerializeField] private float winDelay = 0.8f;
+
         // PlayerPrefs anahtari, herkese acik degil
         private const string PrefsKeyCurrentLevel = "Prism_CurrentLevel";
 
@@ -32,11 +36,23 @@ namespace Prism
         // su anki level index'i (0-based)
         public int CurrentLevelIndex { get; private set; }
 
+        // son level mi diye kontrol, UI bunu kullanir
+        // levelDatabase boslarsa Count-1 = -1 olur, false donmesi icin Count > 0 sarti da var
+        public bool IsOnLastLevel =>
+            levelDatabase != null
+            && levelDatabase.Count > 0
+            && CurrentLevelIndex >= levelDatabase.Count - 1;
+
         // event-driven mimari, baska scriptler bu event'lere subscribe olabilir
         // UI bu event'leri dinleyip ekran guncellemesi yapacak
         public System.Action OnLevelComplete;
         public System.Action OnLevelRestart;
         public System.Action<LevelData> OnLevelLoaded;
+
+        // celebration: kristal yandigi an hemen tetiklenir, konfeti/ses icin
+        // Vector3 parametresi ile pozisyon iletir, konfeti orada patlasin
+        // OnLevelComplete'ten farkli, OnLevelComplete winDelay sonra gelir
+        public System.Action<Vector3> OnCelebrationStart;
 
         private void Awake()
         {
@@ -96,7 +112,8 @@ namespace Prism
         }
 
         // bir sonraki level'e gec
-        // son level'de ise basa donmez (UI farkli ekran gostersin)
+        // UI son leveldan sonra Next butonu gostermiyor (FINAL mod) ama yine de
+        // savunma amaciyla burada kontrol var, son leveldan sonra cagrilirsa hicbir sey yapmaz
         public void NextLevel()
         {
             int next = CurrentLevelIndex + 1;
@@ -107,7 +124,6 @@ namespace Prism
             else
             {
                 Debug.Log("[GameManager] Tum levellar tamamlandi.");
-                // ileride: "All Done" ekrani veya loop
             }
         }
 
@@ -119,13 +135,38 @@ namespace Prism
             OnLevelRestart?.Invoke();
         }
 
+        // tum oyunu basa al, ilk leveldan baslat
+        // "Restart from Level 1" butonu icin
+        public void RestartFromBeginning()
+        {
+            LoadLevelByIndex(0);
+        }
+
         // tum kristaller aktif olunca BeamManager bunu cagirir
-        public void CompleteLevel()
+        // celebrationPos: konfeti vs. spawn noktasi (kristallerin ortalama pozisyonu)
+        public void CompleteLevel(Vector3 celebrationPos)
         {
             // zaten complete ise tekrar tetikleme
             if (CurrentState == GameState.LevelComplete) return;
 
             CurrentState = GameState.LevelComplete;
+
+            // hemen panel acmak yerine belirli sure bekle, oyuncu kazandigini hissetsin
+            // bu sirada konfeti, ses gibi feedback'ler oynar
+            // Coroutine ile basit ve okunabilir, async/await kullanmadan
+            StartCoroutine(InvokeLevelCompleteAfterDelay(celebrationPos));
+        }
+
+        private System.Collections.IEnumerator InvokeLevelCompleteAfterDelay(Vector3 celebrationPos)
+        {
+            // celebration event hemen tetiklenir (konfeti, ses), panel sonra acilir
+            OnCelebrationStart?.Invoke(celebrationPos);
+
+            // win sesi celebration ile birlikte calar
+            if (AudioManager.Instance != null) AudioManager.Instance.PlaySfx(SfxId.LevelComplete);
+
+            yield return new WaitForSeconds(winDelay);
+
             OnLevelComplete?.Invoke();
         }
     }

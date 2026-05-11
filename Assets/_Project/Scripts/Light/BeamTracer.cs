@@ -5,10 +5,12 @@ namespace Prism
 {
     // isin izleme mantigi icin paylasilan helper class
     // hem kaynaktan cikan isinlar hem de prizmadan cikan isinlar ayni mantigi kullaniyor
-    // o yuzden tek yerde, static fonksiyon olarak tuttuk
+    // o yuzden tek yerde, static fonksiyon olarak tuttuk (DRY)
     public static class BeamTracer
     {
-        // gecici array,cok raycast yapacagiz, her cagrida alloc olmasin diye class-level
+        // gecici array, cok raycast yapacagiz, her cagrida alloc olmasin diye class-level
+        // NOT: static ama Unity tek thread'de calistigi icin (main thread) thread-safe sorunu yok
+        // boyut 8: bir ray uzerinde max 8 collider adayi, oyunumuz icin fazlasiyla yeterli
         private static readonly RaycastHit2D[] hitBuffer = new RaycastHit2D[8];
 
         // ContactFilter2D, raycast'in nasil filtre edilecegini soyler
@@ -21,12 +23,14 @@ namespace Prism
         };
 
         // belirli pozisyondan, yonden bir isini izle
-        // ayna bulursa yansit, prizma veya kristal bulursa feed et, durduur
-        // ignoreCollider: bu collider hic algilamayacak (prizma cikisinda kendi collider'ini ignore etmek icin)
+        // ayna bulursa yansit, prizma veya kristal bulursa feed et, durdur
+        // ignoreCollider: bu collider hic algilanmayacak (prizma cikisinda kendi collider'ini ignore etmek icin)
+        // displayColor: prizma yarisini boyamak icin gorsel renk (LightColor enum'undan ayri)
         public static void Trace(
             Vector3 startPos,
             Direction startDir,
             LightColor color,
+            Color displayColor,
             int maxReflections,
             float maxSegmentLength,
             float rayOffset,
@@ -49,6 +53,7 @@ namespace Prism
                 // RaycastNonAlloc deprecated edildi, yerine bu kullaniliyor
                 int hitCount = Physics2D.Raycast(rayStart, dirVec, contactFilter, hitBuffer, maxSegmentLength);
 
+                // en yakin hit'i bul, currentIgnore olan hit'leri atla
                 RaycastHit2D bestHit = default;
                 float bestDistance = float.MaxValue;
                 bool foundHit = false;
@@ -65,56 +70,63 @@ namespace Prism
                     }
                 }
 
-                if (foundHit)
+                // hicbir seye carpmadi, max mesafeye kadar ciz ve isi bitir
+                if (!foundHit)
                 {
-                    // ayna mi?
-                    Mirror mirror = bestHit.collider.GetComponent<Mirror>();
-                    if (mirror != null)
-                    {
-                        // gorsel olarak isin ayna MERKEZINE kadar cizilsin, orada kirilsin
-                        // boylece L seklinde temiz bir yansima olur, kenara snap atmaz
-                        Vector3 mirrorCenter = bestHit.collider.transform.position;
-                        outPoints.Add(mirrorCenter);
-
-                        // arkadan gelen isini yansitmaz, orada durur (emilir)
-                        if (!mirror.CanReflect(currentDir))
-                        {
-                            break;
-                        }
-
-                        currentDir = mirror.Reflect(currentDir);
-                        currentPos = mirrorCenter;
-                        // bu ayna bir sonraki raycast'te tekrar algilanmasin
-                        // collider buyuk oldugu icin onun icinden cikan ray ayni collider'a tekrar carpiyordu
-                        currentIgnore = bestHit.collider;
-                        continue;
-                    }
-
-                    // prizma mi?
-                    LightPrism prism = bestHit.collider.GetComponent<LightPrism>();
-                    if (prism != null)
-                    {
-                        prism.ReceiveLight(color);
-                        outPoints.Add(prism.Position);
-                        break;
-                    }
-
-                    // kristal mi?
-                    Crystal crystal = bestHit.collider.GetComponent<Crystal>();
-                    if (crystal != null)
-                    {
-                        crystal.ReceiveLight(color);
-                    }
-
-                    outPoints.Add(bestHit.point);
-                    break;
+                    Vector3 endPoint = currentPos + (Vector3)(dirVec * maxSegmentLength);
+                    outPoints.Add(endPoint);
+                    return;
                 }
 
-                // hicbir seye carpmazsa max mesafeye kadar ciz, bitir
-                Vector3 endPoint = currentPos + (Vector3)(dirVec * maxSegmentLength);
-                outPoints.Add(endPoint);
-                break;
+                // ayna mi?
+                Mirror mirror = bestHit.collider.GetComponent<Mirror>();
+                if (mirror != null)
+                {
+                    // gorsel olarak isin ayna MERKEZINE kadar cizilsin, orada kirilsin
+                    // boylece L seklinde temiz bir yansima olur, kenara snap atmaz
+                    Vector3 mirrorCenter = bestHit.collider.transform.position;
+                    outPoints.Add(mirrorCenter);
+
+                    // arkadan gelen isini yansitmaz, orada durur (emilir)
+                    if (!mirror.CanReflect(currentDir))
+                        return;
+
+                    currentDir = mirror.Reflect(currentDir);
+                    currentPos = mirrorCenter;
+                    // bu ayna bir sonraki raycast'te tekrar algilanmasin
+                    // collider buyuk oldugu icin onun icinden cikan ray ayni collider'a tekrar carpiyordu
+                    currentIgnore = bestHit.collider;
+                    continue;
+                }
+
+                // prizma mi?
+                LightPrism prism = bestHit.collider.GetComponent<LightPrism>();
+                if (prism != null)
+                {
+                    // prizmaya isin geldigini, hangi yonden geldigini ve gorsel rengini bildir
+                    prism.ReceiveLight(color, currentDir, displayColor);
+                    outPoints.Add(prism.Position);
+                    return;
+                }
+
+                // kristal mi?
+                Crystal crystal = bestHit.collider.GetComponent<Crystal>();
+                if (crystal != null)
+                {
+                    crystal.ReceiveLight(color);
+                }
+
+                // kristal veya bilinmeyen collider: carpma noktasina kadar ciz ve dur
+                // (savunma: sahnede beklenmeyen bir collider olursa isin orada emilir)
+                outPoints.Add(bestHit.point);
+                return;
             }
+
+            // max yansima sinirina ulastik (cok ayna art arda),
+            // son segmenti de ciz ki isin "havada" bitmis gibi gozukmesin
+            Vector2 lastDir = currentDir.ToVector();
+            Vector3 fallbackEnd = currentPos + (Vector3)(lastDir * maxSegmentLength);
+            outPoints.Add(fallbackEnd);
         }
     }
 }

@@ -158,10 +158,12 @@ namespace Prism
         }
 
         // her parca biraz daha gecikmeli spawn olur, satisfying "sirayla canlanma" hissi verir
-        // toplam spawn sayisina gore hesaplanir, ilk parca delay'siz baslar
+        // ilk parca delay'siz baslar, sonrakiler kademeli olarak
+        private const float SpawnStaggerInterval = 0.05f;
+
         private float GetSpawnDelay()
         {
-            return spawnedObjects.Count * 0.05f;
+            return spawnedObjects.Count * SpawnStaggerInterval;
         }
     }
 }

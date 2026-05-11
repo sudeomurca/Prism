@@ -2,18 +2,18 @@ using UnityEngine;
 
 namespace Prism
 {
-    // sinirli sekilde isinin gidecegi yonler
-    // None = yansima yok , ozel durum icin
+    // isinin gidebilecegi yonler
     public enum Direction
     {
-        None,
+        None, //yansima yok
         Up,
         Down,
         Left,
         Right
     }
 
-    //  Direction enum yonlerini vector2 ye cevir
+    // enum yonlerini vector2 ye cevir (raycast atarken,isin cizdirirken gerekli)
+    //extension metodla enuma bagli metod yaz (DRY)
     public static class DirectionExtensions
     {
         public static Vector2 ToVector(this Direction dir) => dir switch

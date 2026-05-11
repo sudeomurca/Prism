@@ -2,15 +2,12 @@ using UnityEngine;
 
 namespace Prism
 {
-    // tum levellarin listesi, sirali olarak
-    // GameManager bu asset'ten "level 0, level 1, level 2..." ceker
-    //
-    // Inspector'da liste seklinde, drag-drop ile sirayi degistirebilirsin
-    // yeni level eklemek = LevelData asset olustur, listeye sürükle, bitti
+    // tum levellarin listesi
+    // GameManager bu asset'ten leveli ceker
     [CreateAssetMenu(fileName = "LevelDatabase", menuName = "Prism/Level Database", order = 1)]
     public class LevelDatabase : ScriptableObject
     {
-        [Tooltip("Tum levellar, sirayla. Index 0 = ilk level.")]
+        [Tooltip("Sirali levellar")]
         public LevelData[] levels;
 
         public int Count => levels != null ? levels.Length : 0;

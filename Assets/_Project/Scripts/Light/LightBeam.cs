@@ -47,6 +47,8 @@ namespace Prism
         {
             lineRenderer.startWidth = width;
             lineRenderer.endWidth = width;
+            // useWorldSpace = true: nokta koordinatlari world space'de mutlak,
+            // transform'a relative degil. Boylece transform donse bile isin yolu kaymaz.
             lineRenderer.useWorldSpace = true;
 
             if (source != null && source.ColorData != null)
@@ -72,6 +74,7 @@ namespace Prism
                 startPos: source.Position,
                 startDir: source.Direction,
                 color: source.ColorData.color,
+                displayColor: source.ColorData.displayColor,
                 maxReflections: maxReflections,
                 maxSegmentLength: maxSegmentLength,
                 rayOffset: RAY_OFFSET,
